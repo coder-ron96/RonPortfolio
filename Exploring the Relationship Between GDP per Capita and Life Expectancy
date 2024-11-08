@@ -1,0 +1,71 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load the datasets
+gdp_data = pd.read_csv(r"C:\Users\jroni\OneDrive\Desktop\Python\test\Python Portfolio Project\gdp_pcap.csv")
+lex_data = pd.read_csv(r"C:\Users\jroni\OneDrive\Desktop\Python\test\Python Portfolio Project\lex.csv")
+
+# Reshape GDP data to long format
+gdp_data_long = pd.melt(gdp_data, id_vars=['country'], var_name='Year', value_name='GDP_Per_Capita')
+gdp_data_long['Year'] = gdp_data_long['Year'].astype(int)  # Convert year to integer
+
+# Reshape Life Expectancy data to long format
+lex_data_long = pd.melt(lex_data, id_vars=['country'], var_name='Year', value_name='Life_Expectancy')
+lex_data_long['Year'] = lex_data_long['Year'].astype(int)  # Convert year to integer
+
+# Rename 'country' column to 'Country' for consistency
+gdp_data_long.rename(columns={'country': 'Country'}, inplace=True)
+lex_data_long.rename(columns={'country': 'Country'}, inplace=True)
+
+# Remove 'k' suffix in GDP_Per_Capita and Life_Expectancy and convert to numeric
+def convert_k_to_numeric(value):
+    if isinstance(value, str) and 'k' in value:
+        return float(value.replace('k', '')) * 1000  # Convert '10k' to 10000
+    return value
+
+gdp_data_long['GDP_Per_Capita'] = gdp_data_long['GDP_Per_Capita'].apply(convert_k_to_numeric).astype(float)
+lex_data_long['Life_Expectancy'] = lex_data_long['Life_Expectancy'].apply(convert_k_to_numeric).astype(float)
+
+# Merge datasets on 'Country' and 'Year'
+merged_data = pd.merge(gdp_data_long, lex_data_long, on=['Country', 'Year'], how='inner')
+
+# Basic Exploratory Data Analysis (EDA)
+# Summary statistics
+print("Summary Statistics:\n", merged_data.describe())
+
+# Correlation between GDP per capita and life expectancy
+correlation = merged_data['GDP_Per_Capita'].corr(merged_data['Life_Expectancy'])
+print(f"Correlation between GDP per Capita and Life Expectancy: {correlation}")
+
+# Data Visualization
+
+# Scatter plot of GDP per capita vs Life Expectancy
+plt.figure(figsize=(10, 6))
+sns.scatterplot(data=merged_data, x='GDP_Per_Capita', y='Life_Expectancy', hue='Country', legend=False)
+plt.title("GDP per Capita vs Life Expectancy by Country")
+plt.xlabel("GDP per Capita")
+plt.ylabel("Life Expectancy")
+plt.show()
+
+# Trend analysis for a selected country (e.g., United States)
+country = "USA"
+country_data = merged_data[merged_data['Country'] == country]
+
+# Check unique country names to find the exact naming for the United States
+#print("Unique Country Names:\n", merged_data['Country'].unique())
+
+
+plt.figure(figsize=(12, 6))
+plt.plot(country_data['Year'], country_data['GDP_Per_Capita'], label="GDP per Capita")
+plt.plot(country_data['Year'], country_data['Life_Expectancy'], label="Life Expectancy")
+plt.title(f"GDP per Capita and Life Expectancy Over Time for {country}")
+plt.xlabel("Year")
+plt.legend()
+plt.show()
+
+# Correlation heatmap
+plt.figure(figsize=(8, 6))
+sns.heatmap(merged_data[['GDP_Per_Capita', 'Life_Expectancy']].corr(), annot=True, cmap="coolwarm")
+plt.title("Correlation between GDP per Capita and Life Expectancy")
+plt.show()
