@@ -1,34 +1,159 @@
+-- Iris Dataset Analysis
+-- This project analyzes the Iris dataset to explore species distribution, descriptive statistics, 
+-- deviations between petal and sepal dimensions, quartile-based clustering, and outlier detection.
+
+-- 1. Species Distribution
+-- This query counts the number of samples for each species in the dataset.
+SELECT 
+    Species, 
+    COUNT(*) AS SpeciesCount 
+FROM 
+    Iris 
+GROUP BY 
+    Species;
+
+-- 2. Descriptive Statistics by Species
+-- Calculates average, minimum, and maximum measurements for each species' sepal and petal dimensions.
+SELECT 
+    Species,
+    AVG(SepalLengthCm) AS AvgSepalLength,
+    AVG(SepalWidthCm) AS AvgSepalWidth,
+    AVG(PetalLengthCm) AS AvgPetalLength,
+    AVG(PetalWidthCm) AS AvgPetalWidth,
+    MIN(SepalLengthCm) AS MinSepalLength,
+    MAX(SepalLengthCm) AS MaxSepalLength,
+    MIN(SepalWidthCm) AS MinSepalWidth,
+    MAX(SepalWidthCm) AS MaxSepalWidth,
+    MIN(PetalLengthCm) AS MinPetalLength,
+    MAX(PetalLengthCm) AS MaxPetalLength,
+    MIN(PetalWidthCm) AS MinPetalWidth,
+    MAX(PetalWidthCm) AS MaxPetalWidth
+FROM 
+    Iris
+GROUP BY 
+    Species;
+
+-- 3. Sepal and Petal Dimension Deviations
+-- Calculates average and standard deviations of the differences between sepal and petal dimensions
+-- to analyze relationships within species.
+SELECT 
+    Species,
+    AVG(SepalLengthCm - PetalLengthCm) AS AvgLengthDeviation,
+    AVG(SepalWidthCm - PetalWidthCm) AS AvgWidthDeviation,
+    (SUM((SepalLengthCm - PetalLengthCm - (SELECT AVG(SepalLengthCm - PetalLengthCm) 
+                                           FROM Iris AS sub WHERE sub.Species = Iris.Species)) * 
+        (SepalLengthCm - PetalLengthCm - (SELECT AVG(SepalLengthCm - PetalLengthCm) 
+                                           FROM Iris AS sub WHERE sub.Species = Iris.Species))) /
+    (COUNT(*) - 1)) AS LengthDeviationStdDev,
+    (SUM((SepalWidthCm - PetalWidthCm - (SELECT AVG(SepalWidthCm - PetalWidthCm) 
+                                          FROM Iris AS sub WHERE sub.Species = Iris.Species)) * 
+         (SepalWidthCm - PetalWidthCm - (SELECT AVG(SepalWidthCm - PetalWidthCm) 
+                                          FROM Iris AS sub WHERE sub.Species = Iris.Species))) /
+    (COUNT(*) - 1)) AS WidthDeviationStdDev
+FROM 
+    Iris
+GROUP BY 
+    Species
+HAVING 
+    ABS(AvgLengthDeviation) > 0.5
+    OR ABS(AvgWidthDeviation) > 0.5;
+
+-- 4. Quartile-Based Clustering Preparation
+-- Divides samples into quartiles by sepal and petal dimensions within each species for clustering.
+WITH SepalLengthRank AS (
+    SELECT 
+        Id,
+        Species,
+        SepalLengthCm,
+        ROW_NUMBER() OVER (PARTITION BY Species ORDER BY SepalLengthCm) AS SepalLengthRank,
+        COUNT(*) OVER (PARTITION BY Species) AS TotalCount
+    FROM 
+        Iris
+),
+PetalLengthRank AS (
+    SELECT 
+        Id,
+        Species,
+        PetalLengthCm,
+        ROW_NUMBER() OVER (PARTITION BY Species ORDER BY PetalLengthCm) AS PetalLengthRank,
+        COUNT(*) OVER (PARTITION BY Species) AS TotalCount
+    FROM 
+        Iris
+)
+SELECT 
+    s.Id,
+    s.Species,
+    s.SepalLengthCm,
+    p.PetalLengthCm,
+    CASE 
+        WHEN s.SepalLengthRank <= s.TotalCount / 4 THEN 1
+        WHEN s.SepalLengthRank <= s.TotalCount / 2 THEN 2
+        WHEN s.SepalLengthRank <= 3 * s.TotalCount / 4 THEN 3
+        ELSE 4
+    END AS SepalLengthQuartile,
+    CASE 
+        WHEN p.PetalLengthRank <= p.TotalCount / 4 THEN 1
+        WHEN p.PetalLengthRank <= p.TotalCount / 2 THEN 2
+        WHEN p.PetalLengthRank <= 3 * p.TotalCount / 4 THEN 3
+        ELSE 4
+    END AS PetalLengthQuartile
+FROM 
+    SepalLengthRank s
+JOIN 
+    PetalLengthRank p ON s.Id = p.Id
+ORDER BY 
+    s.Species, s.Id;
+
+-- 5. Outlier Detection Using IQR
+-- Identifies outliers for each species using the interquartile range (IQR) method.
 WITH RankedSepal AS (
     SELECT 
         Species, 
-        SepalWidthCm,
-        ROW_NUMBER() OVER (PARTITION BY Species ORDER BY SepalWidthCm) AS RowNum,
-        COUNT(*) OVER (PARTITION BY Species) AS TotalCount
+        SepalLengthCm,
+        ROW_NUMBER() OVER (PARTITION BY Species ORDER BY SepalLengthCm) AS SepalRowNum,
+        COUNT(*) OVER (PARTITION BY Species) AS SepalTotalCount
     FROM 
         Iris
 ),
 RankedPetal AS (
     SELECT 
         Species, 
-        PetalWidthCm,
-        ROW_NUMBER() OVER (PARTITION BY Species ORDER BY PetalWidthCm) AS RowNum,
-        COUNT(*) OVER (PARTITION BY Species) AS TotalCount
+        PetalLengthCm,
+        ROW_NUMBER() OVER (PARTITION BY Species ORDER BY PetalLengthCm) AS PetalRowNum,
+        COUNT(*) OVER (PARTITION BY Species) AS PetalTotalCount
     FROM 
         Iris
+),
+Quartiles AS (
+    SELECT 
+        RankedSepal.Species,
+        MAX(CASE WHEN SepalRowNum = SepalTotalCount / 4 THEN SepalLengthCm END) AS SepalQ1,
+        MAX(CASE WHEN SepalRowNum = 3 * SepalTotalCount / 4 THEN SepalLengthCm END) AS SepalQ3,
+        MAX(CASE WHEN PetalRowNum = PetalTotalCount / 4 THEN PetalLengthCm END) AS PetalQ1,
+        MAX(CASE WHEN PetalRowNum = 3 * PetalTotalCount / 4 THEN PetalLengthCm END) AS PetalQ3
+    FROM 
+        RankedSepal
+    LEFT JOIN 
+        RankedPetal ON RankedSepal.Species = RankedPetal.Species 
+                    AND RankedSepal.SepalRowNum = RankedPetal.PetalRowNum
+    GROUP BY 
+        RankedSepal.Species
 )
 SELECT 
-    s.Species,
-    AVG(s.SepalWidthCm) AS AvgSepalWidth,
-    AVG(p.PetalWidthCm) AS AvgPetalWidth,
-    (SELECT SepalWidthCm FROM RankedSepal 
-        WHERE Species = s.Species 
-        AND RowNum = (TotalCount + 1) / 2) AS MedianSepalWidth,
-    (SELECT PetalWidthCm FROM RankedPetal 
-        WHERE Species = p.Species 
-        AND RowNum = (TotalCount + 1) / 2) AS MedianPetalWidth
+    Iris.*,
+    CASE 
+        WHEN SepalLengthCm < (SepalQ1 - 1.5 * (SepalQ3 - SepalQ1)) THEN 'Low Outlier'
+        WHEN SepalLengthCm > (SepalQ3 + 1.5 * (SepalQ3 - SepalQ1)) THEN 'High Outlier'
+        ELSE 'Normal'
+    END AS SepalOutlier,
+    CASE 
+        WHEN PetalLengthCm < (PetalQ1 - 1.5 * (PetalQ3 - PetalQ1)) THEN 'Low Outlier'
+        WHEN PetalLengthCm > (PetalQ3 + 1.5 * (PetalQ3 - PetalQ1)) THEN 'High Outlier'
+        ELSE 'Normal'
+    END AS PetalOutlier
 FROM 
-    RankedSepal s
+    Iris
 JOIN 
-    RankedPetal p ON s.Species = p.Species
-GROUP BY 
-    s.Species;
+    Quartiles ON Iris.Species = Quartiles.Species
+WHERE 
+    SepalOutlier != 'Normal' OR PetalOutlier != 'Normal';
