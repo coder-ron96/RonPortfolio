@@ -1,0 +1,34 @@
+WITH RankedSepal AS (
+    SELECT 
+        Species, 
+        SepalWidthCm,
+        ROW_NUMBER() OVER (PARTITION BY Species ORDER BY SepalWidthCm) AS RowNum,
+        COUNT(*) OVER (PARTITION BY Species) AS TotalCount
+    FROM 
+        Iris
+),
+RankedPetal AS (
+    SELECT 
+        Species, 
+        PetalWidthCm,
+        ROW_NUMBER() OVER (PARTITION BY Species ORDER BY PetalWidthCm) AS RowNum,
+        COUNT(*) OVER (PARTITION BY Species) AS TotalCount
+    FROM 
+        Iris
+)
+SELECT 
+    s.Species,
+    AVG(s.SepalWidthCm) AS AvgSepalWidth,
+    AVG(p.PetalWidthCm) AS AvgPetalWidth,
+    (SELECT SepalWidthCm FROM RankedSepal 
+        WHERE Species = s.Species 
+        AND RowNum = (TotalCount + 1) / 2) AS MedianSepalWidth,
+    (SELECT PetalWidthCm FROM RankedPetal 
+        WHERE Species = p.Species 
+        AND RowNum = (TotalCount + 1) / 2) AS MedianPetalWidth
+FROM 
+    RankedSepal s
+JOIN 
+    RankedPetal p ON s.Species = p.Species
+GROUP BY 
+    s.Species;
